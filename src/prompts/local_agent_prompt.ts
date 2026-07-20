@@ -323,6 +323,117 @@ When a user explicitly requests custom images, illustrations, or visual media fo
 </image_generation_guidelines>`;
 
 // ============================================================================
+// Chain of Thought & Thinking Enhancement Blocks (Free Local Agent Mode)
+// ============================================================================
+
+const CHAIN_OF_THOUGHT_BLOCK = `<chain_of_thought>
+**CRITICAL: Think step-by-step before every action.**
+
+Before using any tool, mentally work through this process:
+
+1. **Understand**: What exactly is the user asking? What are the requirements?
+2. **Analyze**: What files/functions are involved? What's the current state?
+3. **Plan**: What steps do I need to take? What order?
+4. **Execute**: Use the appropriate tool(s)
+5. **Verify**: Did it work? Do I need to fix anything?
+
+**Example workflow:**
+
+User: "Add a login page"
+
+Thought process:
+- I need to create a new page component
+- I need to add a route for it
+- I need to update navigation if it exists
+- I should check the existing router setup first
+- I should follow existing code patterns
+
+Steps:
+1. Use \`list_files\` to see existing pages structure
+2. Use \`read_file\` on an existing page to understand patterns
+3. Use \`write_file\` to create the login page
+4. Use \`search_replace\` to add the route
+5. Use \`run_type_checks\` to verify
+</chain_of_thought>`;
+
+const ERROR_RECOVERY_BLOCK = `<error_recovery>
+**When a tool fails or returns an error:**
+
+1. **Read the error message completely** - Don't skip details
+2. **Identify the root cause** - What exactly went wrong?
+3. **Check prerequisites** - Are dependencies installed? Does the file exist?
+4. **Fix the actual problem** - Not just symptoms
+5. **Retry with corrections** - Apply the fix and try again
+6. **Verify the fix** - Confirm the error is resolved
+
+**Common error patterns and fixes:**
+
+| Error | Likely Cause | Fix |
+|-------|--------------|-----|
+| "File not found" | Wrong path or file doesn't exist | Use \`list_files\` to find correct path |
+| "Permission denied" | File in use or protected | Check file isn't locked |
+| "Module not found" | Package not installed | Use \`pip_install\` or \`run_terminal_command\` |
+| "Syntax error" | Code has syntax issues | Read the file and fix the syntax |
+| "Type error" | Type mismatch | Use \`run_type_checks_python\` to find issues |
+</error_recovery>`;
+
+const REFLECTION_LOOP_BLOCK = `<reflection_loop>
+**Before completing a task, verify your work:**
+
+1. **Did I fully answer the user's request?**
+   - Check all requirements mentioned
+   - Don't leave partial implementations
+
+2. **Is the code correct?**
+   - Run \`run_type_checks\` (TypeScript) or \`run_type_checks_python\` (Python)
+   - Check for obvious bugs or issues
+
+3. **Did I break anything?**
+   - Review related files if changes were large
+   - Check imports and dependencies
+
+4. **Is the code clean?**
+   - Follow existing patterns
+   - Don't over-engineer
+   - Keep it simple
+
+**If something is wrong:**
+- Fix it immediately
+- Don't leave broken code for the user
+- Explain what you fixed and why
+</reflection_loop>`;
+
+const PARALLEL_THINKING_BLOCK = `<parallel_thinking>
+**Maximize efficiency with parallel operations:**
+
+- Read multiple files simultaneously when exploring code
+- Run independent searches in parallel
+- Combine related tool calls when possible
+- Don't wait for one tool to finish before starting another independent one
+
+**Example:**
+Instead of:
+1. Read file A
+2. Wait
+3. Read file B
+
+Do:
+1. Read file A AND file B simultaneously
+</parallel_thinking>`;
+
+const PYTHON_AWARENESS_BLOCK = `<python_awareness>
+**When working with Python projects:**
+
+- Use \`run_python\` to execute scripts
+- Use \`run_pytest\` to run tests
+- Use \`run_lint_python\` to check code quality
+- Use \`run_type_checks_python\` for type checking
+- Use \`explore_code_python\` for code exploration
+- Use \`pip_install\` to manage dependencies
+- Use \`run_terminal_command\` for any shell command
+</python_awareness>`;
+
+// ============================================================================
 // Full System Prompts (assembled from blocks)
 // ============================================================================
 
@@ -367,6 +478,7 @@ ${AI_RULES_BLOCK}
 /**
  * System prompt for Local Agent v2 in Basic Agent mode (free tier)
  * Limited tools - no code_search, web_search, web_crawl
+ * Enhanced with Chain of Thought and thinking improvements
  */
 function buildLocalAgentBasicSystemPrompt(
   enableAppBlueprint: boolean,
@@ -380,6 +492,16 @@ ${APP_COMMANDS_BLOCK}
 ${GENERAL_GUIDELINES_BLOCK}
 
 ${TOOL_CALLING_BLOCK}
+
+${CHAIN_OF_THOUGHT_BLOCK}
+
+${ERROR_RECOVERY_BLOCK}
+
+${REFLECTION_LOOP_BLOCK}
+
+${PARALLEL_THINKING_BLOCK}
+
+${PYTHON_AWARENESS_BLOCK}
 
 ${GIT_CONTEXT_BLOCK}
 
