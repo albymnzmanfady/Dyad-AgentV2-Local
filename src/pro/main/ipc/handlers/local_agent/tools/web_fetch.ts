@@ -27,6 +27,95 @@ function truncateContent(value: string): string {
   return `${value.slice(0, MAX_CONTENT_LENGTH)}\n\n<!-- truncated -->`;
 }
 
+function htmlToMarkdown(html: string): string {
+  let markdown = html;
+
+  // Remove script and style elements
+  markdown = markdown.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  markdown = markdown.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+
+  // Remove HTML comments
+  markdown = markdown.replace(/<!--[\s\S]*?-->/g, "");
+
+  // Convert headings
+  markdown = markdown.replace(/<h1[^>]*>(.*?)<\/h1>/gi, "# $1\n\n");
+  markdown = markdown.replace(/<h2[^>]*>(.*?)<\/h2>/gi, "## $1\n\n");
+  markdown = markdown.replace(/<h3[^>]*>(.*?)<\/h3>/gi, "### $1\n\n");
+  markdown = markdown.replace(/<h4[^>]*>(.*?)<\/h4>/gi, "#### $1\n\n");
+  markdown = markdown.replace(/<h5[^>]*>(.*?)<\/h5>/gi, "##### $1\n\n");
+  markdown = markdown.replace(/<h6[^>]*>(.*?)<\/h6>/gi, "###### $1\n\n");
+
+  // Convert paragraphs
+  markdown = markdown.replace(/<p[^>]*>(.*?)<\/p>/gi, "$1\n\n");
+
+  // Convert line breaks
+  markdown = markdown.replace(/<br\s*\/?>/gi, "\n");
+
+  // Convert bold and italic
+  markdown = markdown.replace(/<strong[^>]*>(.*?)<\/strong>/gi, "**$1**");
+  markdown = markdown.replace(/<b[^>]*>(.*?)<\/b>/gi, "**$1**");
+  markdown = markdown.replace(/<em[^>]*>(.*?)<\/em>/gi, "*$1*");
+  markdown = markdown.replace(/<i[^>]*>(.*?)<\/i>/gi, "*$1*");
+
+  // Convert links
+  markdown = markdown.replace(
+    /<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi,
+    "[$2]($1)",
+  );
+
+  // Convert code blocks
+  markdown = markdown.replace(
+    /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi,
+    "```\n$1\n```\n",
+  );
+  markdown = markdown.replace(/<code[^>]*>(.*?)<\/code>/gi, "`$1`");
+
+  // Convert lists
+  markdown = markdown.replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n");
+
+  // Remove remaining HTML tags
+  markdown = markdown.replace(/<[^>]+>/g, "");
+
+  // Decode HTML entities
+  markdown = markdown.replace(/&amp;/g, "&");
+  markdown = markdown.replace(/&lt;/g, "<");
+  markdown = markdown.replace(/&gt;/g, ">");
+  markdown = markdown.replace(/&quot;/g, '"');
+  markdown = markdown.replace(/&#39;/g, "'");
+  markdown = markdown.replace(/&nbsp;/g, " ");
+
+  // Clean up whitespace
+  markdown = markdown.replace(/\n{3,}/g, "\n\n");
+  markdown = markdown.trim();
+
+  return markdown;
+}
+
+async function localWebFetch(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.5",
+    },
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!response.ok) {
+    throw new DyadError(
+      `HTTP ${response.status}: ${response.statusText}`,
+      DyadErrorKind.External,
+    );
+  }
+
+  const html = await response.text();
+  const markdown = htmlToMarkdown(html);
+
+  return markdown;
+}
+
 const webFetchSchema = z.object({
   url: z.string().describe("URL to fetch content from"),
 });
@@ -88,14 +177,12 @@ export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
   defaultConsent: "always",
   usesEngineEndpoint: true,
 
-  // Requires Dyad Pro engine API
-  isEnabled: (ctx) => ctx.isDyadPro,
+  isEnabled: (ctx) => ctx.isDyadPro || ctx.freeLocalAgentMode,
 
   getConsentPreview: (args) => `Fetch URL: "${args.url}"`,
 
   buildXml: (args, isComplete) => {
     if (!args.url) return undefined;
-    // When complete, return undefined so execute's onXmlComplete provides the final XML
     if (isComplete) return undefined;
     return `<dyad-web-fetch>${escapeXmlContent(args.url)}`;
   },
@@ -108,36 +195,39 @@ export const webFetchTool: ToolDefinition<z.infer<typeof webFetchSchema>> = {
     ctx.onXmlStream(`<dyad-web-fetch>${escapeXmlContent(args.url)}`);
 
     try {
-      const result = await callWebFetch(args.url, ctx);
+      let content: string;
 
-      if (!result) {
-        throw new DyadError(
-          "Web fetch returned no results",
-          DyadErrorKind.NotFound,
-        );
+      if (ctx.freeLocalAgentMode) {
+        content = await localWebFetch(args.url);
+      } else {
+        const result = await callWebFetch(args.url, ctx);
+
+        if (!result) {
+          throw new DyadError(
+            "Web fetch returned no results",
+            DyadErrorKind.NotFound,
+          );
+        }
+
+        content = result.pages
+          .map((page) => `## ${page.url}\n\n${page.markdown}`)
+          .join("\n\n---\n\n");
       }
 
-      // Combine markdown from all pages
-      const allContent = result.pages
-        .map((page) => `## ${page.url}\n\n${page.markdown}`)
-        .join("\n\n---\n\n");
-
-      if (!allContent) {
+      if (!content) {
         throw new DyadError(
           "No content available from web fetch",
           DyadErrorKind.NotFound,
         );
       }
 
-      logger.log(
-        `Web fetch completed for URL: ${args.url} (${result.pages.length} pages)`,
-      );
+      logger.log(`Web fetch completed for URL: ${args.url}`);
 
       ctx.onXmlComplete(
         `<dyad-web-fetch>${escapeXmlContent(args.url)}</dyad-web-fetch>`,
       );
 
-      return truncateContent(allContent);
+      return truncateContent(content);
     } catch (error) {
       ctx.onXmlComplete(
         `<dyad-web-fetch>${escapeXmlContent(args.url)}</dyad-web-fetch>`,

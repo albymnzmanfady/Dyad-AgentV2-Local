@@ -14,7 +14,9 @@ import {
 import type { CodeExplorerResult } from "../../../../../../../shared/code_explorer_types";
 import {
   exploreCodeSchema,
+  formatRawExploreCodeResult,
   normalizeExploreCodeArgsForApp,
+  runRawExploreCode,
 } from "./explore_code_raw";
 import { runExploreCodeSubagent } from "./explore_code_subagent";
 import { resolveTargetAppPath } from "./resolve_app_context";
@@ -35,6 +37,17 @@ function getExploreCodeAvailabilityForAppPath(
   reason: string | null;
   tsconfigPath: string | null;
 } {
+  if (ctx.freeLocalAgentMode) {
+    const availability = getCodeExplorerAvailability(appPath);
+    return {
+      enabled: availability.ready,
+      reason: availability.ready
+        ? null
+        : (availability.reason ?? formatCodeExplorerDisabledReason(availability)),
+      tsconfigPath: availability.tsconfigPath,
+    };
+  }
+
   if (!ctx.isDyadPro) {
     return {
       enabled: false,
@@ -87,24 +100,17 @@ export const exploreCodeTool: ToolDefinition<
   z.infer<typeof exploreCodeSchema>
 > = {
   name: "explore_code",
-  description: `Ask a code reconnaissance sub-agent to find and map relevant code when the relevant files are not reasonably clear from the available context.
-
-If the relevant files or source ranges are already known or reasonably clear from the conversation, prior investigation, selected components, tool results, or other available context, use targeted grep/list_files/read_file calls instead. This tool returns a compact report: a Flow of file/line ranges with quoted evidence, optional Read targets and Search targets, a Confidence, and an Action.
+  description: `Find and map relevant code for a query using TypeScript's language service for symbol analysis and code exploration.
 
 Set the intent argument to what you will do with the result: explain to understand behavior; locate to find the best files or symbols; edit or debug when preparing to change, diagnose, or verify code.
 
-Use the report's Action as the recommended next step:
+The tool returns a structured report with matching files, symbols, and code ranges. Use it to:
+- Understand code structure and relationships
+- Find where specific functions/classes/types are defined
+- Map out data flow and dependencies
+- Prepare for edits by understanding the surrounding code
 
-| Action | Do next | Do NOT |
-|--------|---------|--------|
-| answer_from_report | Answer or plan directly from the report when it contains enough detail. | Repeat the report's discovery work without a new question or unresolved detail. |
-| read_targets | Use the listed targets as jump points; read their tight ranges when exact implementation details, editing, debugging, or verification require it. | Start a broader investigation before using the report's focused targets. |
-| targeted_gap_search | Run the rendered Search targets, then continue with targeted exploration as needed to resolve the identified gap. | Restart the same broad discovery or ignore the report's suggested scope without reason. |
-| skip_explore_result | Proceed without the report; nothing relevant was found. | Treat it as a map. |
-
-Treat the report as a starting map: build on its findings rather than repeating the same discovery work. Targeted grep/list_files/read_file calls are appropriate whenever needed to resolve gaps, inspect implementation details, follow newly discovered paths, debug behavior, or prepare an edit. If confidence is low, inspect the listed read/search targets before relying on the report. If an Action calls for Search targets but none are rendered, use the observed Flow and name the remaining gap.
-
-The sub-agent can search and read files broadly. Its compiler-backed symbol and flow results cover files included in the app's TypeScript config; JavaScript and JSX need TypeScript config support such as allowJs.`,
+If TypeScript is not installed in the app, falls back to grep-based keyword search.`,
   inputSchema: exploreCodeSchema,
   defaultConsent: "always",
   usesEngineEndpoint: true,
@@ -129,11 +135,44 @@ The sub-agent can search and read files broadly. Its compiler-backed symbol and 
       ctx,
       targetAppPath,
     );
+
+    if (!availability.enabled) {
+      const reason =
+        availability.reason ?? "TypeScript code explorer unavailable";
+      ctx.onXmlComplete(
+        `<dyad-explore-code ${buildExploreCodeAttributes(args)}>\n${escapeXmlContent(`Code explorer unavailable: ${reason}. Try grep or list_files for manual exploration.`)}\n</dyad-explore-code>`,
+      );
+      return `Code explorer unavailable: ${reason}. Use grep or list_files for manual exploration.`;
+    }
+
     const effectiveArgs = normalizeExploreCodeArgsForApp({
       appPath: targetAppPath,
       args,
       fallbackTsconfigPath: availability.tsconfigPath,
     });
+
+    if (ctx.freeLocalAgentMode) {
+      try {
+        const result = await runRawExploreCode({
+          appPath: targetAppPath,
+          args: effectiveArgs,
+        });
+
+        const report = formatRawExploreCodeResult(result);
+
+        ctx.onXmlComplete(
+          `<dyad-explore-code ${buildExploreCodeAttributes(effectiveArgs, result)}>\n${escapeXmlContent(report)}\n</dyad-explore-code>`,
+        );
+        return report;
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : String(error);
+        ctx.onXmlComplete(
+          `<dyad-explore-code ${buildExploreCodeAttributes(effectiveArgs)}>\n${escapeXmlContent(`Code exploration failed: ${errorMsg}`)}\n</dyad-explore-code>`,
+        );
+        return `Code exploration failed: ${errorMsg}. Use grep or list_files for manual exploration.`;
+      }
+    }
 
     const streamExploreProgress = (progressText: string) => {
       ctx.onXmlStream(

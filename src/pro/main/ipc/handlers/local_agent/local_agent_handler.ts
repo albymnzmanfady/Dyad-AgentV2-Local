@@ -29,6 +29,7 @@ import { sanitizeMcpToolResult } from "@/ipc/utils/mcp_result_sanitizer";
 import {
   isDyadProEnabled,
   isBasicAgentMode,
+  isFreeLocalAgentModeEnabled,
   type UserSettings,
 } from "@/lib/schemas";
 import type { SqlConsentMetadata } from "@/shared/sqlConsentMetadata";
@@ -511,12 +512,14 @@ export async function handleLocalAgentStream(
 
   // Check Pro status or Basic Agent mode
   // Basic Agent mode allows non-Pro users with quota (quota check is done in chat_stream_handlers)
+  // Free local agent mode allows non-Pro users with any API key
   // Read-only mode (ask mode) is allowed for all users without Pro
   if (
     !readOnly &&
     !planModeOnly &&
     !isDyadProEnabled(settings) &&
-    !isBasicAgentMode(settings)
+    !isBasicAgentMode(settings) &&
+    !isFreeLocalAgentModeEnabled(settings)
   ) {
     const errorMessage =
       referencedApps.length > 0
@@ -688,6 +691,7 @@ export async function handleLocalAgentStream(
     );
     const effectiveFreeModelMode =
       freeModelMode ?? isFreeProModel(settings.selectedModel);
+    const isFreeLocalAgent = isFreeLocalAgentModeEnabled(settings);
     const ctx: AgentContext = {
       event,
       appId: chat.app.id,
@@ -707,7 +711,7 @@ export async function handleLocalAgentStream(
       todos: persistedTodos,
       dyadRequestId,
       fileEditTracker,
-      isDyadPro: isDyadProEnabled(settings),
+      isDyadPro: isDyadProEnabled(settings) || isFreeLocalAgent,
       freeModelMode: effectiveFreeModelMode,
       onXmlStream: (accumulatedXml: string) => {
         // Stream the in-progress tool XML as a sidecar preview overlay.
@@ -766,6 +770,7 @@ export async function handleLocalAgentStream(
       readOnly,
       planModeOnly,
       basicAgentMode: !readOnly && !planModeOnly && isBasicAgentMode(settings),
+      freeLocalAgentMode: isFreeLocalAgent,
       freeModelMode: effectiveFreeModelMode,
       enableAppBlueprint:
         settings.enableAppBlueprint && chat.app.needsAppBlueprint,

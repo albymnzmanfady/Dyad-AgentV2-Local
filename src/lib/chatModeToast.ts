@@ -10,6 +10,8 @@ export function getChatModeDisplayName(mode: ChatMode, isPro: boolean): string {
       return "Ask";
     case "local-agent":
       return isPro ? "Agent" : "Basic Agent";
+    case "local-agent-free":
+      return "Agent (Local)";
     case "plan":
       return "Plan";
   }

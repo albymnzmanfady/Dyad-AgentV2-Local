@@ -402,6 +402,11 @@ export interface BuildAgentToolSetOptions {
    */
   basicAgentMode?: boolean;
   /**
+   * If true, use local alternatives for Engine-dependent tools.
+   * Used for free local agent mode that works without Dyad Pro.
+   */
+  freeLocalAgentMode?: boolean;
+  /**
    * If true, exclude tools that call separate Dyad Engine endpoints.
    * The free Pro model only uses the engine chat-completions endpoint.
    */
@@ -495,6 +500,22 @@ export function shouldIncludeTool(
   }
   if (options.freeModelMode && tool.usesEngineEndpoint) {
     return false;
+  }
+  // In free local agent mode, include Engine-dependent tools (they have local alternatives)
+  // but skip tools that truly require Dyad Pro infrastructure
+  if (options.freeLocalAgentMode && tool.usesEngineEndpoint) {
+    // Allow tools that have local alternatives
+    const localAlternatives = new Set([
+      "code_search",
+      "explore_code",
+      "web_fetch",
+      "web_search",
+      "web_crawl",
+      "generate_image",
+    ]);
+    if (!localAlternatives.has(tool.name)) {
+      return false;
+    }
   }
   // Skip app blueprint tools when the feature is disabled.
   if (

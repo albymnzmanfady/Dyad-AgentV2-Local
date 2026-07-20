@@ -152,6 +152,8 @@ export function ChatModeSelector() {
         return <MessageCircle size={14} />;
       case "local-agent":
         return <Bot size={14} />;
+      case "local-agent-free":
+        return <Bot size={14} className="text-green-500" />;
       case "plan":
         return <Lightbulb size={14} />;
       default:
@@ -211,6 +213,17 @@ export function ChatModeSelector() {
               </div>
             </SelectItem>
           )}
+          <SelectItem value="local-agent-free">
+            <div className="flex flex-col items-start">
+              <div className="flex items-center gap-1.5">
+                <Bot size={14} className="text-green-500" />
+                <span className="font-medium">Agent v2 (Local)</span>
+              </div>
+              <span className="text-xs text-muted-foreground ml-[22px]">
+                Works with any API key, no Dyad Pro required
+              </span>
+            </div>
+          </SelectItem>
           <SelectItem value="plan">
             <div className="flex flex-col items-start">
               <div className="flex items-center gap-1.5">

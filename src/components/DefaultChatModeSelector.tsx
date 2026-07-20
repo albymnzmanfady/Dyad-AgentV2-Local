@@ -103,6 +103,14 @@ export function DefaultChatModeSelector() {
                 </div>
               </SelectItem>
             )}
+            <SelectItem value="local-agent-free">
+              <div className="flex flex-col items-start">
+                <span className="font-medium">Agent v2 (Local)</span>
+                <span className="text-xs text-muted-foreground">
+                  Works with any API key
+                </span>
+              </div>
+            </SelectItem>
             <SelectItem value="build" disabled={isDyadFreeSelected}>
               <div className="flex flex-col items-start">
                 <span className="font-medium">Build</span>

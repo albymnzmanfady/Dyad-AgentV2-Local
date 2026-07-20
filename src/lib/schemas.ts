@@ -154,6 +154,7 @@ export const StoredChatModeSchema = z.enum([
   "ask",
   "agent", // DEPRECATED: converted to "build" on read
   "local-agent",
+  "local-agent-free",
   "plan",
 ]);
 export type StoredChatMode = z.infer<typeof StoredChatModeSchema>;
@@ -161,7 +162,13 @@ export type StoredChatMode = z.infer<typeof StoredChatModeSchema>;
 /**
  * Active chat modes (excludes deprecated values)
  */
-export const ChatModeSchema = z.enum(["build", "ask", "local-agent", "plan"]);
+export const ChatModeSchema = z.enum([
+  "build",
+  "ask",
+  "local-agent",
+  "local-agent-free",
+  "plan",
+]);
 export type ChatMode = z.infer<typeof ChatModeSchema>;
 
 /**
@@ -172,7 +179,21 @@ export type ChatMode = z.infer<typeof ChatModeSchema>;
  * what's actually sent to the model.
  */
 export function isLocalAgentBackedMode(mode: ChatMode | undefined): boolean {
-  return mode === "local-agent" || mode === "ask" || mode === "plan";
+  return (
+    mode === "local-agent" ||
+    mode === "local-agent-free" ||
+    mode === "ask" ||
+    mode === "plan"
+  );
+}
+
+/**
+ * Check if the mode is the free local agent mode (works without Dyad Pro)
+ */
+export function isFreeLocalAgentMode(
+  mode: ChatMode | undefined,
+): boolean {
+  return mode === "local-agent-free";
 }
 
 export const GitHubSecretsSchema = z.object({
@@ -575,6 +596,16 @@ export function isBasicAgentMode(settings: UserSettings): boolean {
   return (
     !isDyadProEnabled(settings) && settings.selectedChatMode === "local-agent"
   );
+}
+
+/**
+ * Check if the current mode is the free local agent mode.
+ * This mode works without Dyad Pro and uses local tools only.
+ */
+export function isFreeLocalAgentModeEnabled(
+  settings: UserSettings,
+): boolean {
+  return settings.selectedChatMode === "local-agent-free";
 }
 
 export function isSupabaseConnected(settings: UserSettings | null): boolean {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import log from "electron-log";
+import { spawn } from "node:child_process";
 import {
   ToolDefinition,
   AgentContext,
@@ -15,6 +16,11 @@ import {
   filterDyadInternalFiles,
   resolveTargetAppPath,
 } from "./resolve_app_context";
+import {
+  getRgExecutablePath,
+  MAX_FILE_SEARCH_SIZE,
+  RIPGREP_EXCLUDED_GLOBS,
+} from "@/ipc/utils/ripgrep_utils";
 
 const logger = log.scope("code_search");
 
@@ -47,6 +53,288 @@ function buildCodeSearchAttributes(args: Partial<CodeSearchArgs>) {
   return `${queryAttr}${appNameAttr}`;
 }
 
+interface RipgrepMatch {
+  path: string;
+  lineNumber: number;
+  lineText: string;
+}
+
+async function runRipgrepForTerm({
+  appPath,
+  term,
+}: {
+  appPath: string;
+  term: string;
+}): Promise<RipgrepMatch[]> {
+  return new Promise((resolve, reject) => {
+    const results: RipgrepMatch[] = [];
+    const args: string[] = [
+      "--json",
+      "--no-config",
+      "--max-filesize",
+      `${MAX_FILE_SEARCH_SIZE}`,
+      "--ignore-case",
+      "--fixed-strings",
+    ];
+
+    const exclusionGlobs = RIPGREP_EXCLUDED_GLOBS;
+    args.push(...exclusionGlobs.flatMap((glob) => ["--glob", glob]));
+    args.push("--glob", "!.dyad/**");
+    args.push("--", term, ".");
+
+    const rg = spawn(getRgExecutablePath(), args, { cwd: appPath });
+    let buffer = "";
+    let stderr = "";
+
+    rg.stdout.on("data", (data) => {
+      buffer += data.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          if (event.type !== "match" || !event.data) continue;
+
+          const matchPath = event.data.path?.text as string;
+          if (!matchPath) continue;
+
+          const lineText = event.data.lines?.text as string;
+          const lineNumber = event.data.line_number as number;
+
+          if (typeof lineText !== "string" || typeof lineNumber !== "number")
+            continue;
+
+          const normalizedPath = matchPath
+            .replace(/\\/g, "/")
+            .replace(/^\.\//, "");
+
+          if (
+            normalizedPath.endsWith(".png") ||
+            normalizedPath.endsWith(".jpg") ||
+            normalizedPath.endsWith(".jpeg") ||
+            normalizedPath.endsWith(".gif") ||
+            normalizedPath.endsWith(".svg") ||
+            normalizedPath.endsWith(".ico") ||
+            normalizedPath.endsWith(".woff") ||
+            normalizedPath.endsWith(".woff2") ||
+            normalizedPath.endsWith(".ttf") ||
+            normalizedPath.endsWith(".eot") ||
+            normalizedPath.endsWith(".map") ||
+            normalizedPath.endsWith(".lock") ||
+            normalizedPath.includes("node_modules") ||
+            normalizedPath.includes(".dyad/")
+          ) {
+            continue;
+          }
+
+          results.push({
+            path: normalizedPath,
+            lineNumber,
+            lineText: lineText.replace(/\r?\n$/, ""),
+          });
+        } catch {
+          // Skip malformed JSON lines
+        }
+      }
+    });
+
+    rg.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    rg.on("close", (code) => {
+      if (code !== 0 && code !== 1) {
+        reject(
+          new Error(`ripgrep exited with code ${code}: ${stderr.slice(0, 200)}`),
+        );
+        return;
+      }
+      resolve(results);
+    });
+
+    rg.on("error", (error) => {
+      reject(error);
+    });
+  });
+}
+
+function extractSearchTerms(query: string): string[] {
+  const stopWords = new Set([
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "shall",
+    "can",
+    "to",
+    "of",
+    "in",
+    "for",
+    "on",
+    "with",
+    "at",
+    "by",
+    "from",
+    "as",
+    "into",
+    "through",
+    "during",
+    "before",
+    "after",
+    "above",
+    "below",
+    "between",
+    "and",
+    "but",
+    "or",
+    "nor",
+    "not",
+    "so",
+    "yet",
+    "both",
+    "either",
+    "neither",
+    "each",
+    "every",
+    "all",
+    "any",
+    "few",
+    "more",
+    "most",
+    "other",
+    "some",
+    "such",
+    "no",
+    "only",
+    "own",
+    "same",
+    "than",
+    "too",
+    "very",
+    "just",
+    "that",
+    "this",
+    "it",
+    "its",
+    "they",
+    "them",
+    "their",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "where",
+    "when",
+    "why",
+    "how",
+  ]);
+
+  const camelCaseTerms: string[] = [];
+  const plainTerms: string[] = [];
+
+  const words = query
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[^a-zA-Z0-9_\s]/g, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+
+  for (const word of words) {
+    if (!stopWords.has(word)) {
+      plainTerms.push(word);
+    }
+  }
+
+  const originalWords = query.split(/\s+/).filter((w) => w.length > 1);
+  for (const word of originalWords) {
+    if (/[A-Z]/.test(word) && word.length > 3) {
+      camelCaseTerms.push(word);
+    }
+  }
+
+  const allTerms = [...new Set([...camelCaseTerms, ...plainTerms])];
+
+  if (allTerms.length === 0) {
+    return [query.trim()];
+  }
+
+  return allTerms;
+}
+
+async function localCodeSearch(
+  query: string,
+  appPath: string,
+): Promise<string[]> {
+  const terms = extractSearchTerms(query);
+  logger.log(`Local search terms: ${terms.join(", ")}`);
+
+  const fileMatchCounts = new Map<
+    string,
+    { count: number; terms: string[] }
+  >();
+
+  const searchPromises = terms.map(async (term) => {
+    try {
+      const matches = await runRipgrepForTerm({ appPath, term });
+      return { term, matches };
+    } catch (error) {
+      logger.warn(`Search for term "${term}" failed:`, error);
+      return { term, matches: [] as RipgrepMatch[] };
+    }
+  });
+
+  const results = await Promise.all(searchPromises);
+
+  for (const { term, matches } of results) {
+    for (const match of matches) {
+      const existing = fileMatchCounts.get(match.path);
+      if (existing) {
+        existing.count++;
+        if (!existing.terms.includes(term)) {
+          existing.terms.push(term);
+        }
+      } else {
+        fileMatchCounts.set(match.path, {
+          count: 1,
+          terms: [term],
+        });
+      }
+    }
+  }
+
+  const sortedFiles = [...fileMatchCounts.entries()]
+    .sort((a, b) => {
+      if (b[1].terms.length !== a[1].terms.length) {
+        return b[1].terms.length - a[1].terms.length;
+      }
+      return b[1].count - a[1].count;
+    })
+    .slice(0, 20)
+    .map(([path]) => path);
+
+  return sortedFiles;
+}
+
 async function callCodeSearch(
   params: {
     query: string;
@@ -55,7 +343,6 @@ async function callCodeSearch(
   },
   ctx: AgentContext,
 ): Promise<string[]> {
-  // Stream initial state to UI
   ctx.onXmlStream(
     `<dyad-code-search${buildCodeSearchAttributes({
       query: params.query,
@@ -106,13 +393,15 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
   defaultConsent: "always",
   usesEngineEndpoint: true,
 
-  // Requires Dyad Pro engine API. When the compiler-backed `explore_code` tool
-  // is available for the current app, it supersedes semantic code search for
-  // discovery, so we hide `code_search` to keep a single discovery tool. This
-  // mirrors the prompt gating in chat_stream_handlers (`codeExplorerAvailable`).
-  isEnabled: (ctx) =>
-    ctx.isDyadPro &&
-    !(readSettings().enableCodeExplorer && isCodeExplorerReady(ctx.appPath)),
+  isEnabled: (ctx) => {
+    if (ctx.freeLocalAgentMode) {
+      return true;
+    }
+    return (
+      ctx.isDyadPro &&
+      !(readSettings().enableCodeExplorer && isCodeExplorerReady(ctx.appPath))
+    );
+  },
 
   getConsentPreview: (args) =>
     args.app_name
@@ -129,45 +418,46 @@ export const codeSearchTool: ToolDefinition<CodeSearchArgs> = {
     logger.log(`Executing code search: ${args.query}`);
     const targetAppPath = resolveTargetAppPath(ctx, args.app_name);
 
-    // Gather all files from the project
-    const { files } = await extractCodebase({
-      appPath: targetAppPath,
-      chatContext: {
-        contextPaths: [],
-        smartContextAutoIncludes: [],
-        excludePaths: [],
-      },
-    });
+    let relevantFiles: string[];
 
-    const filteredFiles = filterDyadInternalFiles(files, args.app_name);
+    if (ctx.freeLocalAgentMode) {
+      relevantFiles = await localCodeSearch(args.query, targetAppPath);
+    } else {
+      const { files } = await extractCodebase({
+        appPath: targetAppPath,
+        chatContext: {
+          contextPaths: [],
+          smartContextAutoIncludes: [],
+          excludePaths: [],
+        },
+      });
 
-    // Map files to FileContext format
-    const filesContext = filteredFiles.map((file) => ({
-      path: file.path,
-      content: file.content,
-    }));
+      const filteredFiles = filterDyadInternalFiles(files, args.app_name);
 
-    logger.log(
-      `Searching ${filesContext.length} files for query: "${args.query}"`,
-    );
+      const filesContext = filteredFiles.map((file) => ({
+        path: file.path,
+        content: file.content,
+      }));
 
-    // Call the code-search endpoint
-    const relevantFiles = await callCodeSearch(
-      {
-        query: args.query,
-        app_name: args.app_name,
-        filesContext,
-      },
-      ctx,
-    );
+      logger.log(
+        `Searching ${filesContext.length} files for query: "${args.query}"`,
+      );
 
-    // Format results
+      relevantFiles = await callCodeSearch(
+        {
+          query: args.query,
+          app_name: args.app_name,
+          filesContext,
+        },
+        ctx,
+      );
+    }
+
     const resultText =
       relevantFiles.length === 0
         ? "No relevant files found."
         : relevantFiles.map((f) => ` - ${f}`).join("\n");
 
-    // Write final result to UI and DB with dyad-code-search wrapper
     ctx.onXmlComplete(
       `<dyad-code-search${buildCodeSearchAttributes(args)}>${escapeXmlContent(resultText)}</dyad-code-search>`,
     );

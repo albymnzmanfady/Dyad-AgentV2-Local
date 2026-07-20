@@ -83,6 +83,11 @@ export interface AgentContext {
    */
   freeModelMode?: boolean;
   /**
+   * If true, this turn is using the free local agent mode.
+   * Tools should use local alternatives instead of Dyad Engine endpoints.
+   */
+  freeLocalAgentMode?: boolean;
+  /**
    * Streams accumulated XML to UI without persisting to DB (for live preview).
    * Call this repeatedly with the full accumulated XML so far.
    */
