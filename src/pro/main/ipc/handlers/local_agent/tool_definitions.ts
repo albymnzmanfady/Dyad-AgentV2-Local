@@ -49,6 +49,9 @@ import { runPytestTool } from "./tools/run_pytest";
 import { runLintPythonTool } from "./tools/run_lint_python";
 import { exploreCodePythonTool } from "./tools/explore_code_python";
 import { runTypeChecksPythonTool } from "./tools/run_type_checks_python";
+import { editExternalFileTool } from "./tools/edit_file_external";
+import { copyExternalFileTool } from "./tools/copy_file_external";
+import { webSearchLocalTool } from "./tools/web_search_local";
 import {
   gitDiffTool,
   gitLogTool,
@@ -146,6 +149,11 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   runLintPythonTool,
   exploreCodePythonTool,
   runTypeChecksPythonTool,
+  // External file operations
+  editExternalFileTool,
+  copyExternalFileTool,
+  // Local web search
+  webSearchLocalTool,
 ];
 // ============================================================================
 // Agent Tool Name Type (derived from TOOL_DEFINITIONS)
