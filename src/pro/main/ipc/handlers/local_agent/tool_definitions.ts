@@ -43,6 +43,10 @@ import { getMcpToolSchemaTool } from "./tools/get_mcp_tool_schema";
 import { writeAppBlueprintTool } from "./tools/write_app_blueprint";
 import { runTerminalCommandTool } from "./tools/run_terminal_command";
 import { readExternalFileTool } from "./tools/read_file_external";
+import { runPythonTool } from "./tools/run_python";
+import { pipInstallTool } from "./tools/pip_install";
+import { runPytestTool } from "./tools/run_pytest";
+import { runLintPythonTool } from "./tools/run_lint_python";
 import {
   gitDiffTool,
   gitLogTool,
@@ -133,6 +137,11 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   runTerminalCommandTool,
   // External file access
   readExternalFileTool,
+  // Python tools
+  runPythonTool,
+  pipInstallTool,
+  runPytestTool,
+  runLintPythonTool,
 ];
 // ============================================================================
 // Agent Tool Name Type (derived from TOOL_DEFINITIONS)
