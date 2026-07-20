@@ -47,6 +47,8 @@ import { runPythonTool } from "./tools/run_python";
 import { pipInstallTool } from "./tools/pip_install";
 import { runPytestTool } from "./tools/run_pytest";
 import { runLintPythonTool } from "./tools/run_lint_python";
+import { exploreCodePythonTool } from "./tools/explore_code_python";
+import { runTypeChecksPythonTool } from "./tools/run_type_checks_python";
 import {
   gitDiffTool,
   gitLogTool,
@@ -142,6 +144,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   pipInstallTool,
   runPytestTool,
   runLintPythonTool,
+  exploreCodePythonTool,
+  runTypeChecksPythonTool,
 ];
 // ============================================================================
 // Agent Tool Name Type (derived from TOOL_DEFINITIONS)
