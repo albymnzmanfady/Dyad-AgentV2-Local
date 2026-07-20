@@ -41,6 +41,7 @@ import { executeSandboxScriptTool } from "./tools/execute_sandbox_script";
 import { searchMcpToolsTool } from "./tools/search_mcp_tools";
 import { getMcpToolSchemaTool } from "./tools/get_mcp_tool_schema";
 import { writeAppBlueprintTool } from "./tools/write_app_blueprint";
+import { runTerminalCommandTool } from "./tools/run_terminal_command";
 import {
   gitDiffTool,
   gitLogTool,
@@ -127,6 +128,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   exitPlanTool,
   // App blueprint tools
   writeAppBlueprintTool,
+  // Terminal commands
+  runTerminalCommandTool,
 ];
 // ============================================================================
 // Agent Tool Name Type (derived from TOOL_DEFINITIONS)
