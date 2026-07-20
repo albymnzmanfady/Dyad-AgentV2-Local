@@ -42,6 +42,7 @@ import { searchMcpToolsTool } from "./tools/search_mcp_tools";
 import { getMcpToolSchemaTool } from "./tools/get_mcp_tool_schema";
 import { writeAppBlueprintTool } from "./tools/write_app_blueprint";
 import { runTerminalCommandTool } from "./tools/run_terminal_command";
+import { readExternalFileTool } from "./tools/read_file_external";
 import {
   gitDiffTool,
   gitLogTool,
@@ -130,6 +131,8 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   writeAppBlueprintTool,
   // Terminal commands
   runTerminalCommandTool,
+  // External file access
+  readExternalFileTool,
 ];
 // ============================================================================
 // Agent Tool Name Type (derived from TOOL_DEFINITIONS)
